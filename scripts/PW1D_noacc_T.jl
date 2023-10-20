@@ -16,6 +16,8 @@ using Plots, ElasticArrays, Printf
     ϕ_bg    = 0.01
     ϕA      = 0.1
     npow    = 3
+    T_bg    = 0.0
+    TA      = 1.0
     # dependent physics
     lx      = lx_lc * lc
     w       = w_lc * lc
@@ -26,7 +28,7 @@ using Plots, ElasticArrays, Printf
     nx      = 200
     nt      = 50
     maxiter = 100nx
-    ϵtol    = 1e-5
+    ϵtol    = [1e-5 1.0]
     ncheck  = ceil(Int, 2nx)
     # preprocessing
     dx      = lx / nx
@@ -34,7 +36,7 @@ using Plots, ElasticArrays, Printf
     dτ_T    = dx^2 / λ / 3.1
     # init
     ϕ       = ϕ_bg .+ ϕA .* exp.(.-((xc .+ lx / 3) ./ w) .^ 2)
-    T       = Array(LinRange(1.0, 0.0, nx))
+    T       = T_bg .+ TA .* exp.(.-((xc .+ lx / 3) ./ w) .^ 2)
     ϕ_i     = copy(ϕ)
     Pe      = zeros(nx)
     qD      = zeros(nx - 1)
@@ -52,10 +54,10 @@ using Plots, ElasticArrays, Printf
     for it = 1:nt
         @printf("it = %d\n", it)
         iter = 1
-        err = 2.0 .* ϵtol
-        err_evo = ElasticArray{Float64}(undef, 1, 0)
+        errs = 2.0 .* ϵtol
+        errs_evo = ElasticArray{Float64}(undef, 2, 0)
         iters_evo = Float64[]
-        while (err .> ϵtol) && iter <= maxiter
+        while any(errs .> ϵtol) && iter <= maxiter
             # material properties
             η_ϕ  .= η_ϕbg .* (ϕ_bg ./ ϕ)
             k_ηf .= k_ηf0 .* (ϕ ./ ϕ_bg) .^ npow
@@ -69,10 +71,11 @@ using Plots, ElasticArrays, Printf
             RT   .= .-((Uf[2:end-1] .* ϕ[2:end-1] + Us[2:end-1] .* (1 .- ϕ[2:end-1])) .- Ut_o[2:end-1]) ./ dt .- diff(qUx) ./ dx
             T[2:end-1] .+= dτ_T .* RT
             if iter % ncheck == 0
-                err = maximum(abs.(RPe))
-                append!(err_evo, err)
+                errs[1] = maximum(abs.(RPe))
+                errs[2] = maximum(abs.(RT))
+                append!(errs_evo, errs)
                 push!(iters_evo, iter / nx)
-                @printf("  iter = %d, iter/nx = %1.3e, err = %1.3e \n", iter, iter / nx, err)
+                @printf("  iter = %d, iter/nx = %1.3e, err = [ %1.3e %1.3e ] \n", iter, iter / nx, errs...)
             end
             iter += 1
         end
@@ -80,10 +83,12 @@ using Plots, ElasticArrays, Printf
         cumsum!(Vs, .-Pe[2:end] ./ η_ϕ[2:end]) .* dx
         Ut_o .= (Uf .* ϕ + Us .* (1 .- ϕ))
         # visualisation
-        p1 = plot(xc, [ϕ_i, ϕ]; title="Porosity", xlabel="x-direction", label=["Init" "φ"])
-        p2 = plot(xc, Pe; title="Effective Pressure", xlabel="x-direction", label="Pe")
-        p3 = plot(iters_evo, err_evo'; title="Residual evolution", yaxis=:log10, marker=:circle, xlabel="Iter/nx", label="RPe")
-        display(plot(p1, p2, p3; layout=(3, 1)))
+        p1 = plot([ϕ_i, ϕ], xc; title="Porosity", ylabel="depth", label=["Init" "φ"])
+        p2 = plot(Pe, xc; title="Effective Pressure", label="Pe")
+        p3 = plot(Vs, xc[2:end]; title="Vs", label="Vs")
+        p4 = plot(T, xc; title="temperature", label="T")
+        # p4 = plot(iters_evo, err_evo'; title="Residual evolution", yaxis=:log10, marker=:circle, xlabel="Iter/nx", label="RPe")
+        display(plot(p1, p2, p3, p4; layout=(1, 4)))
     end
 end
 
